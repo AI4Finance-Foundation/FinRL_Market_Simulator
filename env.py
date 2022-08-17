@@ -34,13 +34,96 @@ FEATURE_SET_FULL = FEATURE_SET_LOB + [
     'trend_strength'
 ]
 
+# stock.csv -> raw/tic/2022-01-01.csv
+class Preprocess(object):
+    filename = './data/stock.csv'
+    data = pd.read_csv(filename)
+    columns = data.columns.values.tolist()
+    tradeDate = []
+    dataTime = []
+    for item in data['datetime']:
+        tmp_tradedate = item[:10].replace('.', '-')
+        tmp_datatime = item[11:-4]
+        tradeDate.append(tmp_tradedate)
+        dataTime.append(tmp_datatime)
+    data['tradeDate'] = tradeDate
+    data['dataTime'] = dataTime
+    data.rename(columns=lambda x: x.replace('ask_volume', 'askVolume'), inplace=True)
+    data.rename(columns=lambda x: x.replace('bid_volume', 'bidVolume'), inplace=True)
+
+    data.rename(columns=lambda x: x.replace('bid', 'bidPrice') if len(x) >= 3 and x[3].isdigit() else x, inplace=True)
+    data.rename(columns=lambda x: x.replace('ask', 'askPrice') if len(x) >= 3 and x[3].isdigit() else x, inplace=True)
+
+    data.rename(columns=lambda x: x.replace('finrl_ticker', 'ticker'), inplace=True)
+
+    data.rename(columns=lambda x: x.replace('lastprice', 'lastPrice'), inplace=True)
+    data.rename(columns=lambda x: x.replace('delta_volume', 'volume'), inplace=True)
+
+    data.rename(columns=lambda x: x.replace('delta_turnover', 'value'), inplace=True)
+
+    data.drop(['datetime'], axis=1, inplace=True)
+
+    # 新添加的，原来的数据中没有
+    data['prevClosePrice'] = 20
+    data['openPrice'] = 21
+
+
+    # 删除行:删除不在时间段（9：30-11：30，13：00-14：57）的行
+    remove_indices = []
+    vec = data['dataTime']
+    for i in range(len(vec)):
+        if vec[i] < '09:30:00' or (vec[i] > '11:30:00' and vec[i] < '13:00:00') or vec[i] > '14:57:00':
+            remove_indices.append(i)
+    data.drop(index=remove_indices, inplace=True)
+
+    data.to_csv('./data/preprocessedstock.csv', index=False)
+
+    tickers = data['ticker'].unique()
+    dates = data['tradeDate'].unique()
+    print(f'tickers: {tickers}')
+    print(f'dates: {dates}')
+
+    data_tickers = {}
+    num_rows = data.shape[0]
+    # tmp = pd.DataFrame()
+    this_ticker = data['ticker'].iloc[0]
+    this_date = data['tradeDate'].iloc[0]
+    begin_row_index = 0
+    for i in range(num_rows):
+        if data['ticker'].iloc[i] == this_ticker:
+            if data['tradeDate'].iloc[i] != this_date:
+                df = data.iloc[list(range(begin_row_index, i)), :]
+                tmp_dict = {this_ticker: {this_date: df}}
+                data_tickers = {**data_tickers, **tmp_dict}
+            elif i == num_rows - 1:
+                df = data.iloc[list(range(begin_row_index, i + 1)), :]
+                tmp_dict = {this_ticker: {this_date: df}}
+                data_tickers = {**data_tickers, **tmp_dict}
+        else:
+            df = data.iloc[list(range(begin_row_index, i)), :]
+            tmp_dict = {this_ticker: {this_date: df}}
+            data_tickers = {**data_tickers, **tmp_dict}
+            this_ticker = data['ticker'].iloc[i]
+            this_date = data['tradeDate'].iloc[i]
+            begin_row_index = i
+
+    for ticker in tickers:
+        if not os.path.exists('./data/raw/' + ticker):
+            os.makedirs('./data/raw/' + ticker)
+        for date in dates:
+            df = data_tickers[ticker][date]
+            df.to_csv('./data/raw/' + ticker + '/' + date + '.csv', index=False)
+
+    pass
+
+
 
 class DefaultConfig(object):
 
-    path_raw_data = '/data/execution_data_v2/raw'
+    path_raw_data = './data/raw'
     # path_pkl_data = '/data/execution_data/pkl'
-    path_pkl_data = '/mnt/execution_data_v2/pkl'
-    result_path = 'results/exp_env'
+    path_pkl_data = './data/pkl'
+    result_path = './results/exp_env'
 
     code_list = CODE_LIST
     date_list = JUNE_DATE_LIST
@@ -55,7 +138,7 @@ class DefaultConfig(object):
     # Encourage a uniform liquidation strategy
     simulation_linear_reg_coeff = 0.1
     # Features used for the market variable
-    simulation_features = FEATURE_SET_FULL
+    simulation_features = FEATURE_SET_FULL  # users can set
     # Stack the features of the previous x bars
     simulation_loockback_horizon = 5
     # Whether return flattened or stacked features of the past x bars
@@ -71,7 +154,7 @@ class DefaultConfig(object):
     # Scale the price delta if we use continuous actions
     simulation_continuous_action_scale = 10
     # Use 'discrete' or 'continuous' action space?
-    simulation_action_type = 'discrete'
+    simulation_action_type = 'discrete_p'
     # ############################### END ###############################
 
 
@@ -91,13 +174,155 @@ class DataPrepare(object):
         os.makedirs(self.config.path_pkl_data, exist_ok=True)
         file_paths = self.obtain_file_paths()
 
-        pool = Pool(NUM_CORES)
-        res = pool.map(self.process_file, file_paths)
-        pd.DataFrame(res).to_csv('data_generation_report.csv')
+        parallel = False
+        res = []
+        if parallel:
+            pool = Pool(NUM_CORES)
+            res = pool.map(self.process_file, file_paths)
+        else:
+            for path in file_paths:
+                tmp_dict = self.process_file(path)
+                res.append(tmp_dict)
+
+        pd.DataFrame(res).to_csv('./data/data_generation_report.csv')
 
     def download_raw_data(self):
 
         raise NotImplementedError
+
+    @staticmethod
+    def _VOLR(df, beta1=0.551, beta2=0.778, beta3=0.699):
+        """
+        Volume Ratio:
+            reflects the supply and demand of investment behavior.
+        Unit: Volume
+        """
+
+        volr = beta1 * (df['bidVolume1'] - df['askVolume1']) / (df['bidVolume1'] + df['askVolume1']) + \
+               beta2 * (df['bidVolume2'] - df['askVolume2']) / (df['bidVolume2'] + df['askVolume2']) + \
+               beta3 * (df['bidVolume3'] - df['askVolume3']) / (df['bidVolume3'] + df['askVolume3'])
+
+        return volr
+
+    @staticmethod
+    def _PCTN(df, n):
+        """
+        Price Percentage Change:
+            a simple mathematical concept that represents the degree of change over time,
+            it is used for many purposes in finance, often to represent the price change of a security.
+        Unit: One
+        """
+
+        mid = (df['askPrice1'] + df['bidPrice1']) / 2
+        pctn = (mid - mid.shift(n)) / mid
+
+        return pctn
+
+    @staticmethod
+    def _MidMove(df, n):
+        """
+        Middle Price Move:
+            indicates the movement of middle price, which can simply be defined as the average of
+            the current bid and ask prices being quoted.
+        Unit: One
+        """
+
+        mid = (df['askPrice1'] + df['bidPrice1']) / 2
+        mean = mid.rolling(n).mean()
+        mid_move = (mid - mean) / mean
+        return mid_move
+
+    @staticmethod
+    def _BSP(df):
+        """
+        Buy-Sell Pressure:
+            the distribution of chips in the buying and selling direction.
+        Unit: Volume
+        """
+
+        EPS = 1e-5
+        mid = (df['askPrice1'] + df['bidPrice1']) / 2
+
+        w_buy_list = []
+        w_sell_list = []
+
+        for level in range(1, 6):
+            w_buy_level = mid / (df['bidPrice{}'.format(level)] - mid - EPS)
+            w_sell_level = mid / (df['askPrice{}'.format(level)] - mid + EPS)
+
+            w_buy_list.append(w_buy_level)
+            w_sell_list.append(w_sell_level)
+
+        sum_buy = pd.concat(w_buy_list, axis=1).sum(axis=1)
+        sum_sell = pd.concat(w_sell_list, axis=1).sum(axis=1)
+
+        p_buy_list = []
+        p_sell_list = []
+        for w_buy_level, w_sell_level in zip(w_buy_list, w_sell_list):
+            p_buy_list.append((df['bidVolume{}'.format(level)] * w_buy_level) / sum_buy)
+            p_sell_list.append((df['askVolume{}'.format(level)] * w_sell_level) / sum_sell)
+
+        p_buy = pd.concat(p_buy_list, axis=1).sum(axis=1)
+        p_sell = pd.concat(p_sell_list, axis=1).sum(axis=1)
+        p = np.log((p_sell + EPS) / (p_buy + EPS))
+
+        return p
+
+    @staticmethod
+    def _weighted_price(df):
+        """
+        Weighted price: The average price of ask and bid weighted
+            by corresponding volumn (divided by last price).
+        Unit: One
+        """
+
+        price_list = []
+        for level in range(1, 6):
+            price_level = (df['bidPrice{}'.format(level)] * df['bidVolume{}'.format(level)] + \
+                           df['askPrice{}'.format(level)] * df['askVolume{}'.format(level)]) / \
+                          (df['bidVolume{}'.format(level)] + df['askVolume{}'.format(level)])
+
+            price_list.append(price_level)
+
+        weighted_price = pd.concat(price_list, axis=1).mean(axis=1)
+        weighted_price = weighted_price / (df['lastPrice'] + 1e-5)
+        return weighted_price
+
+    @staticmethod
+    def _order_imblance(df):
+        """
+        Order imbalance:
+            a situation resulting from an excess of buy or sell orders
+            for a specific security on a trading exchange,
+            making it impossible to match the orders of buyers and sellers.
+        Unit: One
+        """
+
+        oi_list = []
+        for level in range(1, 6):
+            oi_level = (df['bidVolume{}'.format(level)] - df['askVolume{}'.format(level)]) / \
+                       (df['bidVolume{}'.format(level)] + df['askVolume{}'.format(level)])
+
+            oi_list.append(oi_level)
+
+        oi = pd.concat(oi_list, axis=1).mean(axis=1)
+
+        return oi
+
+    @staticmethod
+    def _trend_strength(df, n):
+        """
+        Trend strength: describes the strength of the short-term trend.
+        Unit: One
+        """
+
+        mid = (df['askPrice1'] + df['bidPrice1']) / 2
+        diff_mid = mid - mid.shift(1)
+        sum1 = diff_mid.rolling(n).sum()
+        sum2 = diff_mid.abs().rolling(n).sum()
+        TS = sum1 / sum2
+
+        return TS
 
     def process_file(self, paths, debug=True):
 
@@ -119,7 +344,7 @@ class DataPrepare(object):
 
         if debug:
             print('Current process: {} {} Shape: {}'.format(csv_path, pkl_path, data.shape))
-            assert csv_shape1 == 34
+            # assert csv_shape1 == 34
 
         # Step 2: Formatting the raw data
         trade_date = data.iloc[0]['tradeDate']
@@ -144,19 +369,25 @@ class DataPrepare(object):
         bid1_deal_volume_tick = ((data['volume_dt'] * data['askPrice1'] - data['value_dt']) \
             / (data['askPrice1'] - data['bidPrice1'])).clip(upper=data['volume_dt'], lower=0)
 
-        max_last_price = data['lastPrice'].resample('T').max().reindex(data.index).fillna(method='ffill')
-        min_last_price = data['lastPrice'].resample('T').min().reindex(data.index).fillna(method='ffill')
+        time_interval = '3s'
+        # 'T': 1 min
+        # '3s'
+        
+        max_last_price = data['lastPrice'].resample(time_interval).max().reindex(data.index).fillna(method='ffill')
+        min_last_price = data['lastPrice'].resample(time_interval).min().reindex(data.index).fillna(method='ffill')
 
-        ask1_deal_volume = ((data['askPrice1'] == max_last_price) * ask1_deal_volume_tick).resample('T').sum()
-        bid1_deal_volume = ((data['bidPrice1'] == min_last_price) * bid1_deal_volume_tick).resample('T').sum()
-        max_last_price = data['askPrice1'].resample('T').max()
-        min_last_price = data['bidPrice1'].resample('T').min()
+        ask1_deal_volume = ((data['askPrice1'] == max_last_price) * ask1_deal_volume_tick).resample(time_interval).sum()
+        bid1_deal_volume = ((data['bidPrice1'] == min_last_price) * bid1_deal_volume_tick).resample(time_interval).sum()
+        max_last_price = data['askPrice1'].resample(time_interval).max()
+        min_last_price = data['bidPrice1'].resample(time_interval).min()
 
         # Current 5-level ask/bid price/volume (for modeling temporary market impact of MOs)
         level_infos = ['bidPrice1', 'bidVolume1', 'bidPrice2', 'bidVolume2', 'bidPrice3', 'bidVolume3', 'bidPrice4',
             'bidVolume4', 'bidPrice5', 'bidVolume5', 'askPrice1', 'askVolume1', 'askPrice2', 'askVolume2', 'askPrice3', 
             'askVolume3', 'askPrice4', 'askVolume4', 'askPrice5', 'askVolume5']
-        bar_data = data[level_infos].resample('T').first()
+
+        
+        bar_data = data[level_infos].resample(time_interval).first()
 
         # Fix a common bug in data: level data is missing in the last snapshot
         bar_data.iloc[-1].replace(0.0, np.nan, inplace=True)
@@ -170,7 +401,56 @@ class DataPrepare(object):
 
         # Step 4: Generate state features
         # Normalization constant
-        raise NotImplementedError
+        bar_data['basis_price'] = data['openPrice'].values[0]
+        bar_data['basis_volume'] = data['volume'].values[
+            -1]  # TODO: change this to total volume of the last day instead of the current day
+
+        # Bar information
+        bar_data['high_price'] = data['lastPrice'].resample(time_interval, closed='right', label='right').max()
+        bar_data['low_price'] = data['lastPrice'].resample(time_interval, closed='right', label='right').min()
+        bar_data['high_low_price_diff'] = bar_data['high_price'] - bar_data['low_price']
+        bar_data['open_price'] = data['lastPrice'].resample(time_interval, closed='right', label='right').first()
+        bar_data['close_price'] = data['lastPrice'].resample(time_interval, closed='right', label='right').last()
+        bar_data['volume'] = data['volume_dt'].resample(time_interval, closed='right', label='right').sum()
+        bar_data['vwap'] = data['value_dt'].resample(time_interval, closed='right', label='right').sum() / bar_data['volume']
+        bar_data['vwap'] = bar_data['vwap'].fillna(bar_data['close_price'])
+
+        # LOB features
+        bar_data['ask_bid_spread'] = bar_data['askPrice1'] - bar_data['bidPrice1']
+        bar_data['ab_volume_misbalance'] = \
+            (bar_data['askVolume1'] + bar_data['askVolume2'] + bar_data['askVolume3'] + bar_data['askVolume4'] +
+             bar_data['askVolume5']) \
+            - (bar_data['bidVolume1'] + bar_data['bidVolume2'] + bar_data['bidVolume3'] + bar_data['bidVolume4'] +
+               bar_data['bidVolume5'])
+        bar_data['transaction_net_volume'] = (ask1_deal_volume_tick - bid1_deal_volume_tick).resample(time_interval,
+                                                                                                      closed='right',
+                                                                                                      label='right').sum()
+        bar_data['volatility'] = data['lastPrice'].rolling(20, min_periods=1).std().fillna(0).resample(time_interval,
+                                                                                                       closed='right',
+                                                                                                       label='right').last()
+        bar_data['trend'] = (data['lastPrice'] - data['lastPrice'].shift(20)).fillna(0).resample(time_interval, closed='right',
+                                                                                                 label='right').last()
+        bar_data['immediate_market_order_cost_ask'] = self._calculate_immediate_market_order_cost(bar_data, 'ask')
+        bar_data['immediate_market_order_cost_bid'] = self._calculate_immediate_market_order_cost(bar_data, 'bid')
+
+        # new LOB features
+        bar_data['VOLR'] = self._VOLR(data).fillna(0).resample(time_interval, closed='right', label='right').last()
+        bar_data['PCTN_1min'] = self._PCTN(data, n=20).fillna(0).resample(time_interval, closed='right', label='right').last()
+        bar_data['MidMove_1min'] = self._MidMove(data, n=20).fillna(0).resample(time_interval, closed='right',
+                                                                                label='right').last()
+        bar_data['BSP'] = self._BSP(data).fillna(0).resample(time_interval, closed='right', label='right').last()
+        bar_data['weighted_price'] = self._weighted_price(data).fillna(0).resample(time_interval, closed='right',
+                                                                                   label='right').last()
+        bar_data['order_imblance'] = self._order_imblance(data).fillna(0).resample(time_interval, closed='right',
+                                                                                   label='right').last()
+        bar_data['trend_strength'] = self._trend_strength(data, n=20).fillna(0).resample(time_interval, closed='right',
+                                                                                         label='right').last()
+
+        bar_data['time'] = bar_data.index
+        bar_data = bar_data[bar_data['time'].between(trade_date + ' 09:30:00', trade_date + ' 14:57:00')]
+        bar_data = bar_data[~bar_data['time'].between(trade_date + ' 11:30:01', trade_date + ' 12:59:59')]
+        bar_data['time_diff'] = (bar_data['time'] - bar_data['time'].values[0]) / np.timedelta64(1, 'm') / 330
+        bar_data = bar_data.reset_index(drop=True)
 
         # Step 5: Save to pickle
         with open(pkl_path, 'wb') as f:
@@ -200,6 +480,8 @@ class DataPrepare(object):
 
         file_paths = []
         tickers = os.listdir(self.config.path_raw_data)
+        if '.DS_Store' in tickers:
+            tickers.remove('.DS_Store')
         for ticker in tickers:
             dates = os.listdir(os.path.join(self.config.path_raw_data, ticker))
             file_paths.extend([
@@ -271,12 +553,12 @@ class Data(object):
 
         return os.path.isfile(os.path.join(self.config.path_pkl_data, code, date + '.pkl'))
 
-    def obtain_data(self, code='300733.XSHE', date='2021-09-24', start_index=None, do_normalization=True):
+    def obtain_data(self, code='FINRL_4078', date='2020-12-16', start_index=None, do_normalization=True):
 
         with open(os.path.join(self.config.path_pkl_data, code, date + '.pkl'), 'rb') as f:
             self.data = pickle.load(f)
-        assert self.data.shape[0] == 239, \
-            'The data should be of the shape (239, 42), instead of {}'.format(self.data.shape)
+        # assert self.data.shape[0] == 239, \
+        #     'The data should be of the shape (239, 42), instead of {}'.format(self.data.shape)
         if start_index is None:
             # randomly choose a valid start_index
             start_index = self._random_valid_start_index()
@@ -473,6 +755,7 @@ class ContinuousActionWrapper(BaseWrapper):
 
 
 def make_env(config):
+    # p 代表 price    q 代表 quantity 表示动作空间的形式，是从离散的若干个价格中选择，还是离散的若干个量上选择等。
     if config.simulation_action_type == 'discrete_p':
         return DiscretePriceWrapper(ExecutionEnv(config))
     elif config.simulation_action_type == 'continuous':
@@ -673,9 +956,9 @@ class ExecutionEnv(object):
 
 
 def run_data_prepare():
-    
+    Preprocess()
     config = DefaultConfig()
-    data_prepare = DataPrepare(config)
+    DataPrepare(config)
 
 def run_env_test():
 
@@ -688,7 +971,7 @@ def run_env_test():
     print('snapshot = ')
     print(env.data.backtest_data.loc[env.data.current_index])
 
-    market_state, private_state, reward, done, info = env.step(0.5)
+    market_state, private_state, reward, done, info = env.step(0)
     print('market_state = {}'.format(market_state))
     print('private_state = {}'.format(private_state))
     print('reward = {}'.format(reward))
@@ -697,7 +980,7 @@ def run_env_test():
     print('snapshot = ')
     print(env.data.backtest_data.loc[env.data.current_index])
 
-    market_state, private_state, reward, done, info = env.step(-0.5)
+    market_state, private_state, reward, done, info = env.step(0)
     print('market_state = {}'.format(market_state))
     print('private_state = {}'.format(private_state))
     print('reward = {}'.format(reward))
