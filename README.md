@@ -1,4 +1,4 @@
-# Market_Simulator
+# Market Simulator
 
 We simulate the market by replaying historical limit-order-book-level data and simulating the order matching mechanism.
 
