@@ -23,3 +23,14 @@ We do NOT consider the following factors in our simulator:
 1). permanenet market impact of limit orders;
 
 2). non-resiliency limit-order-book.
+
+## Run
+
+In terminal, 
+```bash
+    python env.py
+
+```
+
+    
+
