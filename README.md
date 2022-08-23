@@ -12,7 +12,7 @@ Reward: can be configured by the contestant with the aim to generate polices tha
 
 We also provide several wrappers to accept conanoical discret or continuous actions.
 
-We consider the following factors in out simulator:
+We consider the following factors in our simulator:
 
 1). Temporary market impact;
 
