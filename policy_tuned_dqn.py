@@ -582,9 +582,15 @@ if __name__ == '__main__':
         [0.1, 0.01], 
         np.arange(5)
     ))
+    parallel = False
+    if parallel:
+        pool = Pool(4)
+        record = pool.map(run, test_list)
+    else:
+        record = []
+        for tmp in test_list:
+            tmp_res = run(tmp)
 
-    pool = Pool(4)
-    record = pool.map(run, test_list)
     record = pd.DataFrame(record)
     record.to_csv(os.path.join(DefaultConfig().result_path, 'result_original.csv'))
     stats = record.groupby(['learning_rate', 'linear_reg', 'architecture']).agg([np.mean, np.std])
