@@ -37,7 +37,7 @@ action，策略的动作，特征数量：2
     - delta_price 等于-1表示用仿真环境设计的最低价格去挂单，反之，+1表示最高价格
 - quantity_ratio 调整后会得到挂到交易所的订单的数量 executed_quantity
     - 动作空间是 -1.0~+1.0，线性变换到 0.0~2.0后，得到 quantity_ratio
-    - 根据剩余的挂单时间，以及剩余的挂单量，计算出这一时刻的基础挂单量self.quantity
+    - reset时，根据剩余的挂单时间，以及剩余的挂单量，计算出基础挂单量self.quantity
 
 以上设计的原因：
     - 用固定的动作 (0, 0) 表示 delta_price=0， quantity_ratio=1.0，能得到一个baselines
