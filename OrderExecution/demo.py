@@ -4,6 +4,97 @@ from elegantrl.run import train_agent, train_agent_multiprocessing
 from elegantrl.config import Config, get_gym_env_args, build_env
 from elegantrl.agent import AgentPPO
 
+'''train'''
+
+
+def train_ppo_a2c_for_order_execution_vec_env():
+    from OrderExecutionEnv import OrderExecutionVecEnv
+    num_envs = 2 ** 9
+
+    gamma = 0.999
+    n_stack = 8
+
+    agent_class = AgentPPO
+    env_class = OrderExecutionVecEnv
+    env_args = {'env_name': 'OrderExecutionVecEnv-v2',
+                'num_envs': num_envs,
+                'max_step': 5000,
+                'state_dim': 48 * n_stack,
+                'action_dim': 2,
+                'if_discrete': False,
+
+                'share_name': '000768_XSHE',
+                'beg_date': '2022-06-09',
+                'end_date': '2022-09-09',
+                'if_random': False}
+    if not env_args:
+        get_gym_env_args(env=OrderExecutionVecEnv(), if_print=True)  # return env_args
+
+    args = Config(agent_class, env_class, env_args)  # see `config.py Arguments()` for hyperparameter explanation
+    args.break_step = int(1e6)  # break training if 'total_step > break_step'
+    args.net_dims = (256, 128, 64)  # the middle layer dimension of MultiLayer Perceptron
+    args.gamma = gamma  # discount factor of future rewards
+    args.horizon_len = 2 ** 9
+
+    args.batch_size = args.horizon_len * num_envs // 32
+    args.repeat_times = 4  # repeatedly update network using ReplayBuffer to keep critic's loss small
+    args.learning_rate = 1e-4
+    args.state_value_tau = 0.01
+
+    eval_num_envs = 16
+    args.save_gap = int(8)
+    args.if_keep_save = True
+    args.if_over_write = False
+    args.eval_per_step = int(4e3)
+    args.eval_times = eval_num_envs
+    from OrderExecutionEnv import OrderExecutionVecEnvForEval
+    args.eval_env_class = OrderExecutionVecEnvForEval
+    args.eval_env_args = env_args.copy()
+    args.eval_env_args['num_envs'] = eval_num_envs
+    args.eval_env_args['max_step'] = 4000 * 22
+    args.eval_env_args['beg_date'] = '2022-09-10'
+    args.eval_env_args['end_date'] = '2022-10-10'
+
+    args.gpu_id = GPU_ID
+    args.eval_gpu_id = GPU_ID
+    args.random_seed = GPU_ID
+    args.num_workers = 2
+
+    if_check = False
+    if if_check:
+        train_agent(args)
+    else:
+        train_agent_multiprocessing(args)
+    """
+    0% < 100% < 120%
+    ################################################################################
+    ID     Step    Time |    avgR   stdR   avgS  stdS |    expR   objC   etc.
+    6  1.64e+04     559 |  100.75    0.3  88000     0 |   -2.81   0.44  -0.03  -0.03
+    6  1.64e+04     559 |  100.75
+    6  1.64e+05    1025 |  101.19    0.5  88000     0 |   -2.58   0.37  -0.10  -0.13
+    6  1.64e+05    1025 |  101.19
+    6  1.72e+05    1471 |  101.21    0.5  88000     0 |   -2.58   0.50   0.01  -0.12
+    6  1.72e+05    1471 |  101.21
+    6  1.80e+05    1916 |  101.20    0.5  88000     0 |   -2.60   0.27  -0.14  -0.11
+    6  1.88e+05    2362 |  101.21    0.5  88000     0 |   -2.63   0.63  -0.19  -0.10
+    6  1.88e+05    2362 |  101.21
+    6  1.97e+05    2807 |  101.22    0.5  88000     0 |   -2.64   0.58  -0.18  -0.10
+    6  1.97e+05    2807 |  101.22
+    6  2.05e+05    3253 |  101.24    0.5  88000     0 |   -2.64   0.25   0.04  -0.09
+    6  2.05e+05    3253 |  101.24
+    6  2.13e+05    3698 |  101.24    0.5  88000     0 |   -2.67   0.46  -0.05  -0.08
+    6  2.13e+05    3698 |  101.24
+    6  2.21e+05    4143 |  101.25    0.5  88000     0 |   -2.68   0.33  -0.01  -0.07
+    6  2.21e+05    4143 |  101.25
+    6  2.29e+05    4589 |  101.26    0.5  88000     0 |   -2.69   0.50   0.08  -0.06
+    6  2.29e+05    4589 |  101.26
+    6  2.38e+05    5034 |  101.27    0.5  88000     0 |   -2.71   0.26   0.05  -0.05
+    6  2.38e+05    5034 |  101.27
+    """
+
+
+'''help users understand Vectorized env by comparing with single env'''
+
 
 def train_ppo_a2c_for_bipedal_walker():
     agent_class = AgentPPO  # DRL algorithm name
@@ -131,88 +222,6 @@ def train_ppo_a2c_for_bipedal_walker_vec_env():
     0  7.23e+05    1167 |  286.92    1.3    842    16 |   -6.86   0.40   0.15   0.30
     0  7.74e+05    1246 |  264.75   74.0    790   122 |   -7.10   0.42   0.18   0.36
     | TrainingTime:    1278 | SavedDir: ./BipedalWalker-v3_PPO_5
-    """
-
-
-'''train'''
-
-
-def train_ppo_a2c_for_order_execution_vec_env():
-    from elegantrl.envs.OrderExecutionEnv import OrderExecutionVecEnv
-
-    # num_envs = 2 ** 9
-    total = 2 ** (9 + 12)  # todo
-    if GPU_ID == 1:
-        num_envs = 2 ** 7
-    elif GPU_ID == 6:
-        num_envs = 2 ** 9
-    elif GPU_ID == 7:
-        num_envs = 2 ** 11
-    else:
-        assert GPU_ID == 0
-        num_envs = 2 ** 13
-
-    gamma = 0.998
-    n_stack = 8
-
-    agent_class = AgentPPO
-    env_class = OrderExecutionVecEnv
-    env_args = {'env_name': 'OrderExecutionVecEnv-v0',
-                'num_envs': num_envs,
-                'max_step': 5000,
-                'state_dim': 48 * n_stack,
-                'action_dim': 2,
-                'if_discrete': False,
-
-                'beg_date': '2022-08-09',
-                'end_date': '2022-09-09',
-                'if_random': False}
-    # get_gym_env_args(env=OrderExecutionVecEnv(), if_print=True)  # return env_args
-
-    args = Config(agent_class, env_class, env_args)  # see `config.py Arguments()` for hyperparameter explanation
-    args.break_step = int(4e5)  # break training if 'total_step > break_step'
-    args.net_dims = (256, 128)  # the middle layer dimension of MultiLayer Perceptron
-    args.gamma = gamma  # discount factor of future rewards
-    args.horizon_len = total // num_envs
-
-    args.batch_size = args.horizon_len * num_envs // 16
-    args.repeat_times = 8  # repeatedly update network using ReplayBuffer to keep critic's loss small
-    args.learning_rate = 1e-4
-    args.state_value_tau = 0.02
-
-    args.eval_times = num_envs * 5
-    args.eval_per_step = int(8e2)
-    args.eval_env_class = env_class
-    # args.eval_env_args = env_args
-    args.eval_env_args = {'env_name': 'OrderExecutionVecEnv-v0',
-                          'num_envs': num_envs,
-                          'max_step': 5000,
-                          'state_dim': 48 * n_stack,
-                          'action_dim': 2,
-                          'if_discrete': False,
-
-                          'beg_date': '2022-09-10',
-                          'end_date': '2022-09-16',
-                          'if_random': False}
-
-    args.gpu_id = GPU_ID
-    args.random_seed = GPU_ID
-    args.num_workers = 1
-    train_agent_multiprocessing(args)
-    # train_agent(args)
-    """
-    0.0 < 1.0 < 1.5 < 2.0
-    ################################################################################
-    ID     Step    Time |    avgR   stdR   avgS  stdS |    expR   objC   etc.
-    0  9.48e+03     423 |   22.63    5.7   4739     0 |   -2.83   1.89   0.00  -0.02
-    0  9.48e+03     423 |   22.63
-    0  3.32e+04     769 |   26.11    5.6   4739     0 |   -2.68   1.43   0.01  -0.10 
-    0  3.32e+04     769 |   26.11  
-    0  5.69e+04    1147 |   26.66    5.0   4739     0 |   -2.55   1.13   0.03  -0.14
-    0  5.69e+04    1147 |   26.66   
-    0  8.06e+04    1591 |   26.81    5.8   4739     0 |   -2.51   0.57   0.00  -0.17
-    0  8.06e+04    1591 |   26.81  
-    0  1.04e+05    1977 |   26.71    5.5   4739     0 |   -2.35   0.93   0.00  -0.24
     """
 
 

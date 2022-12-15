@@ -33,7 +33,37 @@ train_ppo_a2c_for_bipedal_walker_vec_env()   # train PPO in an OpenAI gym vector
 ```
 
 
-The output of `train_ppo_a2c_for_order_execution_vec_env()`
+The output of `train_ppo_a2c_for_order_execution_vec_env()`:
+
+```
+$ python3 main.py <GPU_ID>                                
+| `step`: Number of samples, or total training steps, or running times of `env.step()`.                              
+| `time`: Time spent from the start of training to this moment.                                                      
+| `avgR`: Average value of cumulative rewards, which is the sum of rewards in an episode.                            
+| `stdR`: Standard dev of cumulative rewards, which is the sum of rewards in an episode.                             
+| `avgS`: Average of steps in an episode.                                                                            
+| `objC`: Objective of Critic network. Or call it loss function of critic network.                                   
+| `objA`: Objective of Actor network. It is the average Q value of the critic network.                               
+################################################################################                                     
+ID     Step    Time |    avgR   stdR   avgS  stdS |    expR   objC   etc.                                            
+2  2.05e+03     359 |  101.40    0.3  88000     0 |   -2.82   0.39  -0.07  -0.03                                     
+2  2.05e+03     359 |  101.40                                                                                        
+2  7.27e+04     645 |  102.19    0.3  88000     0 |   -3.08   0.03   0.04   0.12                                     
+2  7.27e+04     645 |  102.19                                                                                        
+2  7.68e+04     901 |  102.20    0.3  88000     0 |   -3.11   1.39   0.03   0.14                                     
+2  7.68e+04     901 |  102.20                                                                                        
+2  8.09e+04    1154 |  102.20    0.3  88000     0 |   -3.17   0.01   0.03   0.18                                     
+2  1.01e+05    2433 |  102.21    0.3  88000     0 |   -3.40   0.00   0.03   0.29                                     
+2  1.10e+05    3008 |  102.23    0.3  88000     0 |   -3.51   0.01   0.03   0.34                                     
+2  1.26e+05    4078 |  102.26    0.3  88000     0 |   -3.71   0.13  -2.61   0.45                                     
+2  1.42e+05    5132 |  102.27    0.3  88000     0 |   -3.91   0.01   0.05   0.55                                     
+2  1.59e+05    6214 |  102.28    0.3  88000     0 |   -4.14   0.01   0.06   0.65                                     
+2  1.75e+05    7247 |  102.29    0.3  88000     0 |   -4.28   0.01   0.04   0.73                                     
+2  1.87e+05    8037 |  102.27    0.3  88000     0 |   -4.47   0.01   0.04   0.82                                     
+2  2.00e+05    8803 |  102.28    0.3  88000     0 |   -4.63   0.57   0.03   0.90                                     
+2  2.04e+05    9058 |  102.28    0.3  88000     0 |   -4.68   0.12   0.01   0.93                                     
+2  2.20e+05   10088 |  102.28    0.3  88000     0 |   -4.94   0.26  -0.44   1.05      ```
+```
 
 ### 评估模型的指标 
 `avgR` 是平均每股售价 除以 当前平均收盘价 乘以100%：订单执行的的清仓任务完成之后，当天所有卖出的股票的平均出售价格。
@@ -54,46 +84,6 @@ The output of `train_ppo_a2c_for_order_execution_vec_env()`
 
 例如下面展示的 terminal output，`expR` 和 `advantage_value` 在 `7e5` 之后数值突变（之前的数值在小幅度内波动，之后突然偏移）
 因此 early stop 的时间点应该在`7e5` 之前。
-
-
-```
-$ python3 main.py <GPU_ID>
-
-| Arguments Remove cwd: ./OrderExecutionVecEnv-v2_PPO_6
-| `step`: Number of samples, or total training steps, or running times of `env.step()`.
-| `time`: Time spent from the start of training to this moment.
-| `avgR`: Average value of cumulative rewards, which is the sum of rewards in an episode.
-| `stdR`: Standard dev of cumulative rewards, which is the sum of rewards in an episode.
-| `avgS`: Average of steps in an episode.
-| `objC`: Objective of Critic network. Or call it loss function of critic network.
-| `objA`: Objective of Actor network. It is the average Q value of the critic network.
-################################################################################
-ID     Step    Time |    avgR   stdR   avgS  stdS |    expR   objC   etc.
-6  1.64e+04     559 |  100.75    0.3  88000     0 |   -2.81   0.44  -0.03  -0.03
-6  1.64e+05    1025 |  101.19    0.5  88000     0 |   -2.58   0.37  -0.10  -0.13
-6  1.72e+05    1471 |  101.21    0.5  88000     0 |   -2.58   0.50   0.01  -0.12
-6  1.80e+05    1916 |  101.20    0.5  88000     0 |   -2.60   0.27  -0.14  -0.11
-6  1.88e+05    2362 |  101.21    0.5  88000     0 |   -2.63   0.63  -0.19  -0.10
-6  1.97e+05    2807 |  101.22    0.5  88000     0 |   -2.64   0.58  -0.18  -0.10
-6  2.05e+05    3253 |  101.24    0.5  88000     0 |   -2.64   0.25   0.04  -0.09
-6  2.13e+05    3698 |  101.24    0.5  88000     0 |   -2.67   0.46  -0.05  -0.08
-6  2.21e+05    4143 |  101.25    0.5  88000     0 |   -2.68   0.33  -0.01  -0.07
-6  2.29e+05    4589 |  101.26    0.5  88000     0 |   -2.69   0.50   0.08  -0.06
-6  2.38e+05    5034 |  101.27    0.5  88000     0 |   -2.71   0.26   0.05  -0.05
-6  2.46e+05    5476 |  101.27    0.5  88000     0 |   -2.75   0.36   0.02  -0.04
-6  2.54e+05    5759 |  101.28    0.5  88000     0 |   -2.76   0.45   0.03  -0.02
-6  2.62e+05    6070 |  101.28    0.5  88000     0 |   -2.79   0.48  -0.02  -0.01
-6  2.70e+05    6353 |  101.29    0.5  88000     0 |   -2.82   0.63  -0.15  -0.01
-6  2.79e+05    6663 |  101.30    0.5  88000     0 |   -2.83   0.45   0.02   0.01
-6  2.87e+05    6944 |  101.30    0.5  88000     0 |   -2.85   0.54  -0.07   0.02
-6  2.95e+05    7254 |  101.31    0.5  88000     0 |   -2.88   0.30  -0.02   0.03
-6  3.03e+05    7536 |  101.31    0.5  88000     0 |   -2.91   0.40  -0.03   0.05
-6  3.11e+05    7847 |  101.31    0.5  88000     0 |   -2.93   0.55   0.02   0.06
-6  4.51e+05    8167 |  101.34    0.5  88000     0 |   -3.41   0.62   0.02   0.29
-6  5.90e+05    8478 |  101.37    0.5  88000     0 |   -3.99   0.29   0.08   0.60
-6  7.29e+05    8799 |  101.34    0.5  88000     0 |   -4.54   0.69   0.03   0.86
-6  8.68e+05    9109 |  101.33    0.6  88000     0 |   -5.12   0.44   0.05   1.17
-```
 
 
 ## Data
